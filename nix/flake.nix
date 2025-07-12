@@ -23,7 +23,7 @@
           inherit system overlays;
         };
         name = "template";
-        src = ./.;
+        src = ../.;
       in {
         packages.default = derivation {
           inherit system name src;
