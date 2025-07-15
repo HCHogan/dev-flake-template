@@ -1,59 +1,70 @@
 {
+  description = "My flake template";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    flake-utils = {
-      url = "github:numtide/flake-utils";
-    };
+    flake-parts.url = "github:hercules-ci/flake-parts";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    flake-utils,
+  outputs = inputs @ {
+    flake-parts,
     rust-overlay,
+    ...
   }:
-    flake-utils.lib.eachDefaultSystem (
-      system: let
-        overlays = [(import rust-overlay)];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
-        name = "template";
-        src = ../.;
+    flake-parts.lib.mkFlake {inherit inputs;} {
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+        "x86_64-darwin"
+      ];
+      perSystem = {
+        config,
+        self',
+        inputs',
+        pkgs,
+        system,
+        ...
+      }: let
+        packages = with pkgs; [
+          cmake
+          ninja
+          gnumake
+          haskell.compiler.ghc912
+          haskell.packages.ghc912.haskell-language-server
+          cabal-install
+
+          (rust-bin.nightly.latest.default.override
+            {
+              extensions = [
+                "rust-src"
+                "rust-analyzer"
+                "llvm-tools"
+              ];
+              # targets = [];
+            })
+        ];
       in {
-        packages.default = derivation {
-          inherit system name src;
-          builder = with pkgs; "${bash}/bin/bash";
-          args = ["-c" "echo foo > $out"];
-        };
-        devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            clang
-            clang-tools
-            cmake
-            ninja
-            gnumake
-            lldb
-
-            haskell.compiler.ghc9101
-            haskell.packages.ghc9101.haskell-language-server
-            cabal-install
-
-            (rust-bin.nightly.latest.default.override
-              {
-                extensions = [
-                  "rust-src"
-                  "rust-analyzer"
-                  "llvm-tools"
-                ];
-                # targets = [];
-              })
+        _module.args.pkgs = import inputs.nixpkgs {
+          inherit system;
+          overlays = [
+            (import rust-overlay)
           ];
+          config = {};
         };
-      }
-    );
+        devShells = {
+          default = pkgs.mkShell {
+            inherit packages;
+          };
+
+          clang = pkgs.mkShell.override {stdenv = pkgs.clangStdenv;} {
+            inherit packages;
+          };
+        };
+      };
+    };
 }
